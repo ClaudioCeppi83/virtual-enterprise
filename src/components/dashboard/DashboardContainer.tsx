@@ -7,7 +7,6 @@ import { KanbanBoard } from "./KanbanBoard";
 import { ApprovalModal } from "./ApprovalModal";
 import { NewProjectModal } from "./NewProjectModal";
 import { MetricsPanel } from "./MetricsPanel";
-import { runDiscoveryAgent } from "../../lib/agents/discovery";
 import { calculateTelemetryMetrics } from "../../lib/metrics/quotaTracker";
 import { Timestamp } from "firebase/firestore";
 
@@ -101,6 +100,7 @@ export const DashboardContainer: React.FC = () => {
   const [selectedProject, setSelectedProject] = useState<ProjectDocument | null>(null);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [isProcessingAgent, setIsProcessingAgent] = useState(false);
+  const [activeAgentMessage, setActiveAgentMessage] = useState<string>("");
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
@@ -113,7 +113,7 @@ export const DashboardContainer: React.FC = () => {
         }
       }
     } catch (e) {
-      console.warn("[Persistencia] Fallo al leer estado guardado, usando demos:", e);
+      console.warn("[Persistencia] Fallo al leer estado guardado:", e);
     } finally {
       setIsHydrated(true);
     }
@@ -132,43 +132,177 @@ export const DashboardContainer: React.FC = () => {
   const liveCount = projects.filter((p) => p.currentStage === "LIVE").length;
   const metrics = calculateTelemetryMetrics(projects.length, liveCount, 1100);
 
-  const handleApprove = (projectId: string, nextStage: ProjectStage) => {
-    setProjects((prev) =>
-      prev.map((p) => (p.id === projectId ? { ...p, currentStage: nextStage, version: p.version + 1 } : p))
-    );
+  const handleApprove = async (projectId: string, nextStage: ProjectStage) => {
+    const targetProj = projects.find((p) => p.id === projectId);
+    if (!targetProj) return;
+
+    setIsProcessingAgent(true);
     setSelectedProject(null);
+
+    try {
+      let updatedProject: ProjectDocument = {
+        ...targetProj,
+        currentStage: nextStage,
+        version: targetProj.version + 1,
+        updatedAt: Timestamp.now(),
+      };
+
+      if (nextStage === "PRD_REVIEW" && targetProj.marketBrief) {
+        setActiveAgentMessage("🤖 Product Spec Agent redactando PRD y especificación técnica...");
+        const res = await fetch("/api/agents/product", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            appName: targetProj.name,
+            marketBrief: targetProj.marketBrief,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success && data.prdSpec) {
+          updatedProject.prdSpec = data.prdSpec;
+        }
+      } else if (nextStage === "DEV_READY" && targetProj.marketBrief) {
+        setActiveAgentMessage("🤖 Growth Agent generando activos de copywriting y SEO...");
+        const res = await fetch("/api/agents/growth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            appName: targetProj.name,
+            marketBrief: targetProj.marketBrief,
+            prdSpec: targetProj.prdSpec,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success && data.marketingAssets) {
+          updatedProject.marketingAssets = data.marketingAssets;
+        }
+      } else if (nextStage === "IN_DEV" || nextStage === "QA_TESTING") {
+        setActiveAgentMessage("🛠️ Antigravity Dev realizando scaffolding y verificación de QA...");
+        if (targetProj.marketBrief && targetProj.prdSpec && targetProj.marketingAssets) {
+          const specTicket = {
+            projectId,
+            appName: targetProj.name,
+            techStack: {
+              framework: "Next.js 14",
+              styling: "Tailwind CSS",
+              database: "Firebase Firestore",
+              auth: "Firebase Auth",
+            },
+            prd: targetProj.prdSpec,
+            marketing: targetProj.marketingAssets,
+            status: "DEV_READY" as const,
+          };
+
+          const res = await fetch("/api/agents/engineering", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticket: specTicket }),
+          });
+
+          const data = await res.json();
+          if (data.success) {
+            updatedProject.currentStage = "QA_TESTING";
+          }
+        }
+      } else if (nextStage === "LIVE") {
+        setActiveAgentMessage("🚀 Deploy Agent publicando en Firebase Hosting y CDN Global...");
+        const res = await fetch("/api/agents/deploy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, appName: targetProj.name }),
+        });
+
+        const data = await res.json();
+        if (data.success && data.liveUrl) {
+          updatedProject.liveUrl = data.liveUrl;
+        }
+      }
+
+      setProjects((prev) => prev.map((p) => (p.id === projectId ? updatedProject : p)));
+    } catch (err: any) {
+      console.error(`[HITL Approve Agent Error] Proyecto ${projectId}:`, err);
+    } finally {
+      setIsProcessingAgent(false);
+      setActiveAgentMessage("");
+    }
   };
 
-  const handleReject = (projectId: string, feedback: string) => {
-    console.log(`[HITL Feedback] Proyecto ${projectId}:`, feedback);
-    setProjects((prev) =>
-      prev.map((p) => (p.id === projectId ? { ...p, currentStage: "IDEATION" } : p))
-    );
+  const handleReject = async (projectId: string, feedback: string) => {
+    const targetProj = projects.find((p) => p.id === projectId);
+    if (!targetProj) return;
+
+    setIsProcessingAgent(true);
+    setActiveAgentMessage(`🤖 Discovery Agent re-evaluando mercado con feedback: "${feedback.substring(0, 25)}..."`);
     setSelectedProject(null);
+
+    try {
+      const res = await fetch("/api/agents/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          niche: targetProj.marketBrief?.niche || targetProj.name,
+          userPrompt: `Re-evaluar el producto según la retroalimentación ejecutiva del fundador: "${feedback}". Ajustar nicho, problema y propuesta de valor.`,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success && data.marketBrief) {
+        const updatedProject: ProjectDocument = {
+          ...targetProj,
+          currentStage: "IDEATION",
+          version: targetProj.version + 1,
+          updatedAt: Timestamp.now(),
+          marketBrief: data.marketBrief,
+        };
+
+        setProjects((prev) => prev.map((p) => (p.id === projectId ? updatedProject : p)));
+      }
+    } catch (err: any) {
+      console.error(`[HITL Reject Feedback Agent Error] Proyecto ${projectId}:`, err);
+    } finally {
+      setIsProcessingAgent(false);
+      setActiveAgentMessage("");
+    }
   };
 
   const handleCreateProject = async (name: string, niche: string) => {
     setIsProcessingAgent(true);
+    setActiveAgentMessage(`🤖 Discovery Agent investigando nicho: "${niche}"...`);
     const projectId = `proj_${Date.now()}`;
 
     try {
-      const discoveryResult = await runDiscoveryAgent({ projectId, niche });
+      const res = await fetch("/api/agents/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, niche }),
+      });
 
-      const newProj: ProjectDocument = {
-        id: projectId,
-        name,
-        currentStage: "IDEATION",
-        version: 1,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        marketBrief: discoveryResult.marketBrief,
-      };
+      const data = await res.json();
 
-      setProjects((prev) => [newProj, ...prev]);
+      if (data.success && data.marketBrief) {
+        const newProj: ProjectDocument = {
+          id: projectId,
+          name,
+          currentStage: "IDEATION",
+          version: 1,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+          marketBrief: data.marketBrief,
+        };
+
+        setProjects((prev) => [newProj, ...prev]);
+      }
     } catch (err) {
       console.error("[DiscoveryAgent UI Trigger Failed]", err);
     } finally {
       setIsProcessingAgent(false);
+      setActiveAgentMessage("");
     }
   };
 
@@ -191,7 +325,7 @@ export const DashboardContainer: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold text-sky-300">Tablero de Mando Corporativo (Human-in-the-Loop)</h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Estado 100% persistido. Los cambios se conservan automáticamente tras refrescar con Ctrl + F5.
+              Agentes en vivo conectados a Gemini API vía API Routes. Tus acciones invocan directamente a la IA y re-escriben entregables.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -203,7 +337,7 @@ export const DashboardContainer: React.FC = () => {
             </button>
             {isProcessingAgent && (
               <div className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold animate-pulse flex items-center gap-2">
-                <span>🤖 Discovery Agent procesando mercado...</span>
+                <span>{activeAgentMessage || "🤖 Agente de IA ejecutando tareas..."}</span>
               </div>
             )}
           </div>
