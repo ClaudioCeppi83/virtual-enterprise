@@ -50,8 +50,19 @@ export const DashboardContainer: React.FC = () => {
 
   // Cargar clave y proyectos de localStorage al montar
   useEffect(() => {
+    // Comprobar si el servidor ya tiene la clave configurada
+    fetch("/api/config")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hasServerKey && !localStorage.getItem(API_KEY_STORAGE)) {
+          // El servidor ya tiene la clave activa
+          setGeminiApiKey("SERVER_CONFIGURED");
+        }
+      })
+      .catch(() => {});
+
     const savedKey = localStorage.getItem(API_KEY_STORAGE) || "";
-    setGeminiApiKey(savedKey);
+    if (savedKey) setGeminiApiKey(savedKey);
 
     const savedProjects = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedProjects) {
@@ -86,7 +97,7 @@ export const DashboardContainer: React.FC = () => {
 
   const fetchWithKey = async (url: string, body: any) => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (geminiApiKey) {
+    if (geminiApiKey && geminiApiKey !== "SERVER_CONFIGURED") {
       headers["x-gemini-api-key"] = geminiApiKey;
     }
     return fetch(url, {

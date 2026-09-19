@@ -22,7 +22,7 @@ export interface GeminiCallResponse {
 }
 
 export async function callGemini(options: GeminiCallOptions): Promise<GeminiCallResponse> {
-  const rawApiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const rawApiKey = (options.apiKey && options.apiKey.trim().length > 0) ? options.apiKey : process.env.GEMINI_API_KEY;
 
   if (!rawApiKey) {
     return {
@@ -50,12 +50,12 @@ export async function callGemini(options: GeminiCallOptions): Promise<GeminiCall
   // Modelos candidatos en orden de prioridad:
   // 1. Modelo preferido por la gobernanza (gemini-3.8-flash)
   // 2. Modelos de alta disponibilidad en Google AI Studio (gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-flash)
-  const primaryModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  const primaryModel = process.env.GEMINI_MODEL || "gemini-3.6-flash";
   const candidateModels = [
     primaryModel,
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash",
   ];
 
   const contents: any[] = [];
