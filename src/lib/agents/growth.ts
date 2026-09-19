@@ -8,6 +8,7 @@ export interface GrowthAgentParams {
   prdSpec?: PRDSpec;
   userPrompt?: string;
   previousThoughtSignature?: string;
+  apiKey?: string;
 }
 
 export interface GrowthAgentResult {
@@ -19,7 +20,8 @@ export interface GrowthAgentResult {
 }
 
 export async function runGrowthAgent(params: GrowthAgentParams): Promise<GrowthAgentResult> {
-  const systemPrompt = `Eres el Agente de Growth de Virtual Enterprise. Creas activos de conversión, titulares persuasivos, CTAs y palabras clave SEO.
+  const systemPrompt = `Eres el Agente de Growth y Copywriting de Virtual Enterprise.
+Generas la estrategia de conversión, titulares de alto impacto, propuesta de valor persuasiva y palabras clave SEO para el nicho.
 Debes responder ÚNICAMENTE en formato JSON con la siguiente estructura:
 {
   "heroHeadline": string,
@@ -29,8 +31,10 @@ Debes responder ÚNICAMENTE en formato JSON con la siguiente estructura:
   "seoKeywords": [string]
 }`;
 
-  const prompt = `Genera activos de marketing para "${params.appName}".
+  const prompt = `Genera los activos de marketing para "${params.appName}".
 Nicho: ${params.marketBrief.niche}
+Audiencia Objetivo: ${params.marketBrief.targetAudience}
+Problema: ${params.marketBrief.problemStatement}
 Propuesta de Valor: ${params.marketBrief.valueProposition}`;
 
   try {
@@ -38,6 +42,7 @@ Propuesta de Valor: ${params.marketBrief.valueProposition}`;
       systemPrompt,
       userPrompt: prompt,
       thoughtSignature: params.previousThoughtSignature,
+      apiKey: params.apiKey,
     });
 
     let assets: MarketingAssets;
@@ -46,17 +51,18 @@ Propuesta de Valor: ${params.marketBrief.valueProposition}`;
       assets = MarketingAssetsSchema.parse(parsed);
     } else {
       assets = {
-        heroHeadline: `Potencia tu negocio en ${params.marketBrief.niche} con IA de Última Generación`,
-        heroSubheadline: `Ahorra tiempo, elimina errores y automatiza tus flujos clave con Gemini 3.8 Flash.`,
-        ctaText: "Comenzar Gratis Hoy",
+        heroHeadline: `La Solución Inteligente para ${params.marketBrief.niche}`,
+        heroSubheadline: `Optimiza tus operaciones, elimina la fricción manual y escala con ${params.appName}.`,
+        ctaText: "Comenzar Prueba Gratuita",
         features: [
-          { title: "Inferencia en Tiempo Real", description: "Velocidad ultra-rápida y razonamiento profundo." },
-          { title: "Arquitectura Serverless", description: "Alta disponibilidad y costo optimizado." },
+          { title: "Automatización Específica", description: `Diseñado desde cero para resolver los problemas de ${params.marketBrief.niche}.` },
+          { title: "Panel en Tiempo Real", description: "Visualiza indicadores clave y toma decisiones con datos actualizados." },
+          { title: "Fácil Integración", description: "Configuración en minutos sin requerir conocimientos técnicos complejos." },
         ],
         seoKeywords: [
-          `${params.marketBrief.niche.toLowerCase()} ia`,
-          "automatización saas",
-          "software b2b inteligente",
+          `${params.marketBrief.niche.toLowerCase()}`,
+          `software para ${params.marketBrief.niche.toLowerCase()}`,
+          "automatización saas b2b",
         ],
       };
     }

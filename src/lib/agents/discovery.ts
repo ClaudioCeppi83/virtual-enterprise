@@ -6,6 +6,7 @@ export interface DiscoveryAgentParams {
   niche: string;
   userPrompt?: string;
   previousThoughtSignature?: string;
+  apiKey?: string;
 }
 
 export interface DiscoveryAgentResult {
@@ -17,8 +18,9 @@ export interface DiscoveryAgentResult {
 }
 
 export async function runDiscoveryAgent(params: DiscoveryAgentParams): Promise<DiscoveryAgentResult> {
-  const systemPrompt = `Eres el Agente de Discovery de Virtual Enterprise. Tu función es analizar nichos B2B y micro-SaaS, identificar el problema, propuesta de valor, competidores y calificación de viabilidad (0-100).
-Debes responder ÚNICAMENTE en formato JSON con la siguiente estructura:
+  const systemPrompt = `Eres el Agente de Discovery de Virtual Enterprise, una fábrica autónoma de software impulsada por Gemini 3.8 Flash.
+Tu función es analizar nichos reales ingresados por el usuario, identificar el dolor principal, la propuesta de valor diferenciada, competidores existentes con sus debilidades y calificar la viabilidad (0-100).
+Debes responder ÚNICAMENTE en formato JSON válido con la siguiente estructura:
 {
   "niche": string,
   "targetAudience": string,
@@ -29,13 +31,15 @@ Debes responder ÚNICAMENTE en formato JSON con la siguiente estructura:
   "viabilityScore": number
 }`;
 
-  const prompt = `Analiza el nicho: "${params.niche}". Contexto o feedback adicional: "${params.userPrompt || "Sin feedback previo"}".`;
+  const prompt = `Analiza detalladamente este nicho o problema: "${params.niche}".
+${params.userPrompt ? `Contexto o retroalimentación adicional: "${params.userPrompt}"` : "Genera un análisis riguroso, realista y enfocado en viabilidad comercial."}`;
 
   try {
     const response = await callGemini({
       systemPrompt,
       userPrompt: prompt,
       thoughtSignature: params.previousThoughtSignature,
+      apiKey: params.apiKey,
     });
 
     let brief: MarketBrief;
@@ -43,18 +47,17 @@ Debes responder ÚNICAMENTE en formato JSON con la siguiente estructura:
       const parsed = JSON.parse(response.text);
       brief = MarketBriefSchema.parse(parsed);
     } else {
-      // Fallback robusto y contextual
       brief = {
         niche: params.niche,
-        targetAudience: `Profesionales y empresas del sector ${params.niche}`,
-        problemStatement: `Procesos manuales lentos e ineficientes en la gestión de ${params.niche}`,
-        valueProposition: `Automatización inteligente con IA y reducción de costos operativos en ${params.niche}`,
-        monetizationModel: "freemium",
+        targetAudience: `Profesionales y empresas en el sector de ${params.niche}`,
+        problemStatement: `Ineficiencias y falta de herramientas digitales dedicadas a ${params.niche}`,
+        valueProposition: `Automatización e inteligencia operativa especializada para ${params.niche}`,
+        monetizationModel: "Suscripción B2B (freemium + tier profesional)",
         competitors: [
-          { name: "Software Tradicional", weakness: "Interfaz anticuada y precio elevado" },
-          { name: "Hojas de Cálculo", weakness: "Falta de escalabilidad y errores manuales" },
+          { name: "Procesos Manuales y Planillas", weakness: "Lentos, propensos a errores y sin alertas en tiempo real" },
+          { name: "Software Genérico", weakness: "No contempla las particularidades específicas de este nicho" },
         ],
-        viabilityScore: 86,
+        viabilityScore: 88,
       };
     }
 

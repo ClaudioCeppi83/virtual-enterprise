@@ -7,6 +7,7 @@ export interface ProductAgentParams {
   marketBrief: MarketBrief;
   userPrompt?: string;
   previousThoughtSignature?: string;
+  apiKey?: string;
 }
 
 export interface ProductAgentResult {
@@ -19,7 +20,8 @@ export interface ProductAgentResult {
 }
 
 export async function runProductAgent(params: ProductAgentParams): Promise<ProductAgentResult> {
-  const systemPrompt = `Eres el Agente de Producto (Product Spec Agent) de Virtual Enterprise. Traduces el MarketBrief en un PRD funcional con rutas y criterios de aceptación.
+  const systemPrompt = `Eres el Agente de Producto (Product Spec Agent) de Virtual Enterprise.
+Traduces el MarketBrief en un Documento de Requisitos de Producto (PRD) técnico y ejecutable.
 Debes responder ÚNICAMENTE en formato JSON con la siguiente estructura:
 {
   "appName": string,
@@ -28,15 +30,16 @@ Debes responder ÚNICAMENTE en formato JSON con la siguiente estructura:
   "acceptanceCriteria": [string]
 }`;
 
-  const prompt = `Genera la especificación PRD para "${params.appName}".
+  const prompt = `Genera la especificación PRD completa para la aplicación "${params.appName}".
 Market Brief: ${JSON.stringify(params.marketBrief)}
-Feedback adicional: "${params.userPrompt || "Ninguno"}".`;
+${params.userPrompt ? `Feedback o requerimiento especial: "${params.userPrompt}"` : "Define rutas funcionales y criterios de aceptación claros para un MVP v0.1.0."}`;
 
   try {
     const response = await callGemini({
       systemPrompt,
       userPrompt: prompt,
       thoughtSignature: params.previousThoughtSignature,
+      apiKey: params.apiKey,
     });
 
     let prd: PRDSpec;
@@ -46,15 +49,16 @@ Feedback adicional: "${params.userPrompt || "Ninguno"}".`;
     } else {
       prd = {
         appName: params.appName,
-        summary: `Micro-SaaS para ${params.marketBrief.niche} optimizado con Gemini 3.8 Flash y arquitectura serverless.`,
+        summary: `Plataforma SaaS para ${params.marketBrief.niche} con arquitectura modular y flujos de automatización.`,
         routes: [
-          { path: "/", description: "Dashboard interactivo y herramientas clave", components: ["Hero", "MainTool", "Stats"] },
-          { path: "/settings", description: "Configuración de usuario y API keys", components: ["SettingsForm"] },
+          { path: "/", description: "Panel de control principal y métricas operativas", components: ["MetricCards", "ActivityFeed", "QuickActions"] },
+          { path: "/workspace", description: "Área de trabajo específica para gestionar tareas de " + params.marketBrief.niche, components: ["DataGrid", "TaskEditor"] },
+          { path: "/settings", description: "Configuración de integración y preferencias", components: ["ApiKeyManager", "ProfileForm"] },
         ],
         acceptanceCriteria: [
-          "Tiempo de respuesta de inferencia menor a 2 segundos",
-          "Compatibilidad 100% offline-first con sincronización automática",
-          "Interfaz adaptativa a dispositivos móviles y escritorio",
+          "Tiempo de carga inicial menor a 1.2 segundos",
+          "Persistencia de datos en tiempo real",
+          "Diseño responsivo optimizado para desktop y móvil",
         ],
       };
     }
