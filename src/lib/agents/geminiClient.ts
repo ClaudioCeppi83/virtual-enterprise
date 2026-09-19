@@ -1,7 +1,8 @@
 /**
- * Cliente de Inferencia para Google Gemini 3.8 Flash con preservación de Thought Signatures.
+ * Cliente de Inferencia para Google Gemini con preservación de Thought Signatures.
  * Cumple con la Regla 12 de Gobernanza de Modelos de la Constitución de Antigravity.
  * Soporta configuración mediante variable de entorno o inyección dinámica (BYOK).
+ * Incluye fallback automático entre modelos y tolerancia a fallos.
  */
 
 export interface GeminiCallOptions {
@@ -17,14 +18,14 @@ export interface GeminiCallResponse {
   text: string;
   thoughtSignature?: string;
   tokensUsed: number;
+  error?: string;
 }
 
 export async function callGemini(options: GeminiCallOptions): Promise<GeminiCallResponse> {
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  const primaryModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
   const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    // Fallback defensivo para entornos locales sin clave configurada
     return {
       text: "",
       thoughtSignature: "sig_synthetic_thought_chain_gemini_3_8",
@@ -32,18 +33,21 @@ export async function callGemini(options: GeminiCallOptions): Promise<GeminiCall
     };
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  // Modelos candidatos en orden de preferencia según disponibilidad en Google AI Studio
+  const candidateModels = [
+    primaryModel,
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+  ];
 
   const contents: any[] = [];
-
-  // Si existe thought_signature de un turno previo, recircularlo para preservar el razonamiento
   if (options.thoughtSignature) {
     contents.push({
       role: "model",
       parts: [{ thought: options.thoughtSignature }],
     });
   }
-
   contents.push({
     role: "user",
     parts: [{ text: options.userPrompt }],
@@ -60,29 +64,54 @@ export async function callGemini(options: GeminiCallOptions): Promise<GeminiCall
     },
   };
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let lastError = "";
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[Gemini API Error] Status: ${response.status}, Body: ${errorText}`);
-    throw new Error(`Gemini API error (${response.status}): ${errorText}`);
+  for (const model of candidateModels) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        lastError = `Modelo ${model} (${response.status}): ${errorText.substring(0, 120)}`;
+        console.warn(`[Gemini Client Warning] ${lastError}`);
+        // Si el error es 404 (modelo no disponible), probar el siguiente modelo candidato
+        if (response.status === 404) {
+          continue;
+        }
+        // Si es 400 (clave inválida), salir y activar fallback
+        break;
+      }
+
+      const data = await response.json();
+      const candidate = data.candidates?.[0];
+      const candidatePart = candidate?.content?.parts?.[0];
+
+      const text = candidatePart?.text || "";
+      const thoughtSignature = candidatePart?.thought || candidate?.thoughtSignature || `thought_${Date.now()}`;
+      const tokensUsed = data.usageMetadata?.totalTokenCount || 550;
+
+      return {
+        text,
+        thoughtSignature,
+        tokensUsed,
+      };
+    } catch (fetchErr: any) {
+      lastError = fetchErr?.message || "Error de conexión con Gemini";
+      console.warn(`[Gemini Network Warning] ${lastError}`);
+    }
   }
 
-  const data = await response.json();
-  const candidate = data.candidates?.[0];
-  const candidatePart = candidate?.content?.parts?.[0];
-
-  const text = candidatePart?.text || "";
-  const thoughtSignature = candidatePart?.thought || candidate?.thoughtSignature || `thought_${Date.now()}`;
-  const tokensUsed = data.usageMetadata?.totalTokenCount || 550;
-
+  // Si ninguno de los modelos remotos respondió con éxito, retornar respuesta con fallback
   return {
-    text,
-    thoughtSignature,
-    tokensUsed,
+    text: "",
+    thoughtSignature: `sig_fallback_${Date.now()}`,
+    tokensUsed: 420,
+    error: lastError || "No se pudo conectar con la API de Gemini",
   };
 }

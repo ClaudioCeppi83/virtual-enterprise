@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState } from "react";
 import { Sparkles, Lightbulb } from "lucide-react";
 
@@ -22,8 +23,12 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !niche.trim()) return;
-    onCreate(name.trim(), niche.trim());
+    e.stopPropagation();
+    const trimmedName = name.trim();
+    const trimmedNiche = niche.trim();
+    if (!trimmedName || !trimmedNiche) return;
+
+    onCreate(trimmedName, trimmedNiche);
     setName("");
     setNiche("");
     onClose();
@@ -43,6 +48,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-white text-xl font-mono leading-none"
           >
@@ -62,6 +68,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 transition-colors"
               required
+              autoFocus
             />
           </div>
 
@@ -104,7 +111,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-sm shadow-md shadow-blue-500/20 transition-all"
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-sm shadow-md shadow-blue-500/20 transition-all cursor-pointer"
             >
               Iniciar Fábrica de Software
             </button>
