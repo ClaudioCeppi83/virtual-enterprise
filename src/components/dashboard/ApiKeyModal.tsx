@@ -1,6 +1,7 @@
 "use client";
+
 import React, { useState, useEffect } from "react";
-import { Key, CheckCircle, ShieldAlert, ExternalLink, Trash2 } from "lucide-react";
+import { Key, CheckCircle, ShieldAlert, ExternalLink, Trash2, Zap, RefreshCw, AlertTriangle } from "lucide-react";
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -16,12 +17,51 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   currentKey,
 }) => {
   const [apiKey, setApiKey] = useState("");
+  const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [testFeedback, setTestFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     setApiKey(currentKey || "");
+    setTestStatus("idle");
+    setTestFeedback(null);
   }, [currentKey, isOpen]);
 
   if (!isOpen) return null;
+
+  const handleTestKey = async () => {
+    const keyToTest = apiKey.trim();
+    if (!keyToTest) {
+      setTestStatus("error");
+      setTestFeedback("Por favor ingresa una clave antes de probar.");
+      return;
+    }
+
+    setTestStatus("testing");
+    setTestFeedback("Conectando con Google AI Studio...");
+
+    try {
+      const res = await fetch("/api/test-gemini", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-gemini-api-key": keyToTest,
+        },
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setTestStatus("success");
+        setTestFeedback("✅ ¡Conexión Exitosa! Tu clave de Google AI Studio está activa y funcionando.");
+      } else {
+        setTestStatus("error");
+        setTestFeedback(`❌ Google respondió: ${data.error || "Clave no válida o sin permisos"}`);
+      }
+    } catch (err: any) {
+      setTestStatus("error");
+      setTestFeedback(`❌ Error de conexión: ${err?.message || "No se pudo contactar al servidor"}`);
+    }
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +72,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const handleRemove = () => {
     onSaveKey("");
     setApiKey("");
+    setTestStatus("idle");
+    setTestFeedback(null);
     onClose();
   };
 
@@ -45,10 +87,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Conexión en Vivo: Google Gemini API</h3>
-              <p className="text-xs text-slate-400">Bring Your Own Key (BYOK) — Inferencia Real con Gemini 3.8 Flash</p>
+              <p className="text-xs text-slate-400">Bring Your Own Key (BYOK) — Inferencia Real con Gemini</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-white text-xl font-mono leading-none"
           >
@@ -61,14 +104,56 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
               Gemini API Key
             </label>
-            <input
-              type="password"
-              placeholder="AIzaSy..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-sky-500 transition-colors"
-            />
+            <div className="flex gap-2">
+              <input
+                type="password"
+                placeholder="AIzaSy..."
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  setTestStatus("idle");
+                  setTestFeedback(null);
+                }}
+                className="flex-1 px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-white focus:outline-none focus:border-sky-500 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={handleTestKey}
+                disabled={testStatus === "testing" || !apiKey.trim()}
+                className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-sky-400 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0"
+              >
+                {testStatus === "testing" ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                    <span>Probando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Probar Clave</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
+
+          {/* Feedback de la prueba */}
+          {testFeedback && (
+            <div
+              className={`p-3 rounded-xl border text-xs leading-relaxed flex items-start gap-2 ${
+                testStatus === "success"
+                  ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+                  : testStatus === "error"
+                  ? "bg-red-950/40 border-red-500/30 text-red-300"
+                  : "bg-sky-950/40 border-sky-500/30 text-sky-300"
+              }`}
+            >
+              {testStatus === "success" && <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+              {testStatus === "error" && <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
+              {testStatus === "testing" && <RefreshCw className="w-4 h-4 text-sky-400 shrink-0 mt-0.5 animate-spin" />}
+              <span>{testFeedback}</span>
+            </div>
+          )}
 
           <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-2 text-xs text-slate-400">
             <div className="flex items-center gap-2 text-sky-300 font-semibold">
