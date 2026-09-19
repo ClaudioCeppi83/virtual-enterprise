@@ -2,7 +2,7 @@
  * Cliente de Inferencia para Google Gemini con preservación de Thought Signatures.
  * Cumple con la Regla 12 de Gobernanza de Modelos de la Constitución de Antigravity.
  * Soporta configuración mediante variable de entorno o inyección dinámica (BYOK).
- * Incluye fallback automático entre modelos y tolerancia a fallos.
+ * Incluye fallback automático entre modelos (Gemini 3 -> 2.5 -> 2.0 -> 1.5) y tolerancia a fallos.
  */
 
 export interface GeminiCallOptions {
@@ -22,10 +22,9 @@ export interface GeminiCallResponse {
 }
 
 export async function callGemini(options: GeminiCallOptions): Promise<GeminiCallResponse> {
-  const primaryModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  const apiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const rawApiKey = options.apiKey || process.env.GEMINI_API_KEY;
 
-  if (!apiKey) {
+  if (!rawApiKey) {
     return {
       text: "",
       thoughtSignature: "sig_synthetic_thought_chain_gemini_3_8",
@@ -33,7 +32,25 @@ export async function callGemini(options: GeminiCallOptions): Promise<GeminiCall
     };
   }
 
-  // Modelos candidatos en orden de preferencia según disponibilidad en Google AI Studio
+  // Limpieza defensiva de la clave (remover comillas, espacios, saltos de línea accidentales)
+  const cleanKey = rawApiKey.trim().replace(/^["'\s]+|["'\s]+$/g, "");
+
+  if (cleanKey.length < 10) {
+    console.warn(`[Gemini Client] Clave API con longitud sospechosa: ${cleanKey.length}`);
+    return {
+      text: "",
+      thoughtSignature: `sig_fallback_${Date.now()}`,
+      tokensUsed: 420,
+      error: "La clave API proporcionada es demasiado corta o inválida.",
+    };
+  }
+
+  console.log(`[Gemini Client] Conectando con Google Gemini API (Key: ${cleanKey.substring(0, 6)}...${cleanKey.substring(cleanKey.length - 4)}, Longitud: ${cleanKey.length})`);
+
+  // Modelos candidatos en orden de prioridad:
+  // 1. Modelo preferido por la gobernanza (gemini-3.8-flash)
+  // 2. Modelos de alta disponibilidad en Google AI Studio (gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-flash)
+  const primaryModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
   const candidateModels = [
     primaryModel,
     "gemini-2.5-flash",
@@ -67,25 +84,26 @@ export async function callGemini(options: GeminiCallOptions): Promise<GeminiCall
   let lastError = "";
 
   for (const model of candidateModels) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    // Pasar clave tanto en query param como en header oficial x-goog-api-key
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`;
 
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": cleanKey,
+        },
         body: JSON.stringify(body),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        lastError = `Modelo ${model} (${response.status}): ${errorText.substring(0, 120)}`;
+        lastError = `Modelo ${model} (${response.status}): ${errorText.substring(0, 150)}`;
         console.warn(`[Gemini Client Warning] ${lastError}`);
-        // Si el error es 404 (modelo no disponible), probar el siguiente modelo candidato
-        if (response.status === 404) {
-          continue;
-        }
-        // Si es 400 (clave inválida), salir y activar fallback
-        break;
+        // Si este modelo falla (ej. 404 Not Found o 400 Bad Request por nombre de modelo),
+        // probamos con el siguiente modelo de la lista
+        continue;
       }
 
       const data = await response.json();
@@ -96,22 +114,25 @@ export async function callGemini(options: GeminiCallOptions): Promise<GeminiCall
       const thoughtSignature = candidatePart?.thought || candidate?.thoughtSignature || `thought_${Date.now()}`;
       const tokensUsed = data.usageMetadata?.totalTokenCount || 550;
 
+      console.log(`[Gemini Client Success] Inferencia real exitosa con modelo: ${model} (${tokensUsed} tokens)`);
+
       return {
         text,
         thoughtSignature,
         tokensUsed,
       };
     } catch (fetchErr: any) {
-      lastError = fetchErr?.message || "Error de conexión con Gemini";
+      lastError = fetchErr?.message || "Error de conexión de red con Gemini";
       console.warn(`[Gemini Network Warning] ${lastError}`);
     }
   }
 
-  // Si ninguno de los modelos remotos respondió con éxito, retornar respuesta con fallback
+  console.warn(`[Gemini Client Fallback] Ningún modelo remoto respondió favorablemente. Último error: ${lastError}`);
+
   return {
     text: "",
     thoughtSignature: `sig_fallback_${Date.now()}`,
     tokensUsed: 420,
-    error: lastError || "No se pudo conectar con la API de Gemini",
+    error: lastError || "No se pudo conectar con la API de Google Gemini",
   };
 }
