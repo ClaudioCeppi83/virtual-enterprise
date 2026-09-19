@@ -1,16 +1,24 @@
 import { z } from "zod";
 
+/**
+ * Etapas del ciclo de vida operativo de un micro-SaaS en Virtual Enterprise.
+ * Cada etapa representa el dominio de responsabilidad de un departamento de IA.
+ */
 export type ProjectStage =
-  | "IDEATION"
-  | "PRD_REVIEW"
-  | "DEV_READY"
-  | "IN_DEV"
-  | "QA_TESTING"
-  | "LIVE"
-  | "PAUSED";
+  | "IDEATION"     // Discovery Agent: Detección y validación de nicho
+  | "PRD_REVIEW"   // Product Agent: Especificación funcional y PRD
+  | "DEV_READY"    // Growth Agent: Estrategia de marketing y SEO
+  | "IN_DEV"       // Engineering Agent: Blueprint y scaffolding técnico
+  | "QA_TESTING"   // Engineering Agent: Validación y certificación de calidad
+  | "LIVE"         // Deploy Agent: Publicación y URL canónica de hosting
+  | "PAUSED";      // Estado pausado por el usuario o en espera de feedback
 
+/**
+ * Esquema Zod de validación para el entregable del Discovery Agent.
+ * Exige viabilidad numérica (0-100) para permitir decisiones algorítmicas de avance.
+ */
 export const MarketBriefSchema = z.object({
-  niche: z.string(),
+  niche: z.string().min(2, "El nicho debe tener al menos 2 caracteres"),
   targetAudience: z.string(),
   problemStatement: z.string(),
   valueProposition: z.string(),
@@ -21,6 +29,10 @@ export const MarketBriefSchema = z.object({
 
 export type MarketBrief = z.infer<typeof MarketBriefSchema>;
 
+/**
+ * Esquema Zod para la especificación PRD generada por el Product Agent.
+ * Estructura las rutas esperadas y los criterios de aceptación para el equipo de ingeniería.
+ */
 export const PRDSpecSchema = z.object({
   appName: z.string(),
   summary: z.string(),
@@ -36,6 +48,9 @@ export const PRDSpecSchema = z.object({
 
 export type PRDSpec = z.infer<typeof PRDSpecSchema>;
 
+/**
+ * Esquema Zod para los activos de conversión diseñados por el Growth Agent.
+ */
 export const MarketingAssetsSchema = z.object({
   heroHeadline: z.string(),
   heroSubheadline: z.string(),
@@ -46,9 +61,12 @@ export const MarketingAssetsSchema = z.object({
 
 export type MarketingAssets = z.infer<typeof MarketingAssetsSchema>;
 
+/**
+ * Estructura del documento de proyecto almacenado en Firestore o en memoria/localStorage.
+ */
 export interface ProjectDocument {
-  id: string;
-  name: string;
+  readonly id: string;
+  readonly name: string;
   currentStage: ProjectStage;
   version: number;
   createdAt: any;
