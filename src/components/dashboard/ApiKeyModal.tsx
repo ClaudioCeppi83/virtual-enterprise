@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Key, CheckCircle, ShieldAlert, ExternalLink, Trash2, Zap, RefreshCw, AlertTriangle } from "lucide-react";
+import { Key, CheckCircle, ShieldAlert, ExternalLink, Trash2, Zap, RefreshCw, AlertTriangle, Cloud } from "lucide-react";
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -19,8 +19,16 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const [apiKey, setApiKey] = useState("");
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testFeedback, setTestFeedback] = useState<string | null>(null);
+  const [hasServerKey, setHasServerKey] = useState(false);
 
   useEffect(() => {
+    fetch("/api/config")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hasServerKey) setHasServerKey(true);
+      })
+      .catch(() => {});
+
     setApiKey(currentKey || "");
     setTestStatus("idle");
     setTestFeedback(null);
@@ -30,29 +38,30 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
   const handleTestKey = async () => {
     const keyToTest = apiKey.trim();
-    if (!keyToTest) {
+    if (!keyToTest && !hasServerKey) {
       setTestStatus("error");
       setTestFeedback("Por favor ingresa una clave antes de probar.");
       return;
     }
 
     setTestStatus("testing");
-    setTestFeedback("Conectando con Google AI Studio...");
+    setTestFeedback("Conectando con Google Gemini API (gemini-3.6-flash)...");
 
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (keyToTest) {
+        headers["x-gemini-api-key"] = keyToTest;
+      }
       const res = await fetch("/api/test-gemini", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-gemini-api-key": keyToTest,
-        },
+        headers,
       });
 
       const data = await res.json();
 
       if (data.success) {
         setTestStatus("success");
-        setTestFeedback("✅ ¡Conexión Exitosa! Tu clave de Google AI Studio está activa y funcionando.");
+        setTestFeedback(`✅ ¡Conexión Exitosa! Google Gemini respondió en vivo (${data.tokensUsed} tokens procesados).`);
       } else {
         setTestStatus("error");
         setTestFeedback(`❌ Google respondió: ${data.error || "Clave no válida o sin permisos"}`);
@@ -77,6 +86,13 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     onClose();
   };
 
+  const handleUseServerKey = () => {
+    onSaveKey("");
+    setApiKey("");
+    setTestStatus("idle");
+    setTestFeedback("Usando clave activa de Google Cloud configurada en el servidor.");
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl text-slate-100 animate-in fade-in zoom-in-95 duration-150">
@@ -87,7 +103,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Conexión en Vivo: Google Gemini API</h3>
-              <p className="text-xs text-slate-400">Bring Your Own Key (BYOK) — Inferencia Real con Gemini</p>
+              <p className="text-xs text-slate-400">Google Gemini 3.6 Flash • Conexión en Tiempo Real</p>
             </div>
           </div>
           <button
@@ -99,6 +115,24 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
           </button>
         </div>
 
+        {hasServerKey && (
+          <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex items-center justify-between text-xs text-emerald-300">
+            <div className="flex items-center gap-2">
+              <Cloud className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Clave oficial de Google Cloud configurada en el servidor.</span>
+            </div>
+            {apiKey && (
+              <button
+                type="button"
+                onClick={handleUseServerKey}
+                className="underline hover:text-white font-semibold ml-2"
+              >
+                Usar clave del servidor
+              </button>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleSave} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
@@ -107,7 +141,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
             <div className="flex gap-2">
               <input
                 type="password"
-                placeholder="AIzaSy..."
+                placeholder={hasServerKey ? "Clave del servidor activa (o ingresa una personalizada)..." : "AIzaSy..."}
                 value={apiKey}
                 onChange={(e) => {
                   setApiKey(e.target.value);
@@ -119,7 +153,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               <button
                 type="button"
                 onClick={handleTestKey}
-                disabled={testStatus === "testing" || !apiKey.trim()}
+                disabled={testStatus === "testing"}
                 className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-sky-400 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0"
               >
                 {testStatus === "testing" ? (
@@ -161,12 +195,8 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               <span>Privacidad & Seguridad Garantizadas</span>
             </div>
             <p>
-              Tu clave se almacena <strong>únicamente en el almacenamiento local (localStorage)</strong> de tu navegador. Nunca se registra en bases de datos ni se comparte con terceros.
+              Tu clave se almacena <strong>únicamente en el almacenamiento local (localStorage)</strong> de tu navegador. Si no ingresas una clave personalizada, el sistema usará automáticamente la clave del servidor.
             </p>
-            <div className="pt-1 flex items-center gap-1.5 text-slate-500">
-              <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
-              <span>Si no se proporciona, el sistema usará un motor de fallback sintético seguro.</span>
-            </div>
           </div>
 
           <div className="pt-1 flex items-center justify-between text-xs">
