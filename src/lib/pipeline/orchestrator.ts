@@ -42,6 +42,7 @@ export async function runEnterprisePipeline(
       appName,
       marketBrief: discoveryResult.marketBrief,
       userPrompt,
+      previousThoughtSignature: discoveryResult.thoughtSignature,
     });
     if (!productResult.success || !productResult.projectSpecTicket) {
       throw new Error(`Fallo en Product Spec Agent: ${productResult.error}`);
@@ -56,6 +57,7 @@ export async function runEnterprisePipeline(
       marketBrief: discoveryResult.marketBrief,
       prdSpec: productResult.prdSpec,
       userPrompt,
+      previousThoughtSignature: productResult.thoughtSignature,
     });
     if (!growthResult.success || !growthResult.marketingAssets) {
       throw new Error(`Fallo en Growth Agent: ${growthResult.error}`);
@@ -67,14 +69,21 @@ export async function runEnterprisePipeline(
       marketing: growthResult.marketingAssets,
     };
 
-    const engineeringResult = await runEngineeringAgent({ ticket: updatedTicket });
+    const engineeringResult = await runEngineeringAgent({
+      ticket: updatedTicket,
+      previousThoughtSignature: growthResult.thoughtSignature,
+    });
     if (!engineeringResult.success || engineeringResult.qaStatus !== "QA_PASS") {
-      throw new Error(`Fallo en Antigravity Dev & QA: ${engineeringResult.qaOutput}`);
+      throw new Error(`Fallo en Engineering QA: ${engineeringResult.qaOutput}`);
     }
     stagesCompleted.push("IN_DEV");
     stagesCompleted.push("QA_TESTING");
 
-    const deployResult = await runDeployAgent({ projectId, appName });
+    const deployResult = await runDeployAgent({
+      projectId,
+      appName,
+      previousThoughtSignature: engineeringResult.thoughtSignature,
+    });
     if (!deployResult.success || !deployResult.liveUrl) {
       throw new Error(`Fallo en Deploy Agent: ${deployResult.error}`);
     }
